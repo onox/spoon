@@ -1,0 +1,18 @@
+name = "spoon"
+description = "Spawn processes without a fork()!"
+version = "1.0.0"
+website = "https://github.com/onox/spoon"
+licenses = "Apache-2.0"
+tags = ["posix", "spawn", "process"]
+
+authors = ["onox"]
+maintainers = ["onox <denkpadje@gmail.com>"]
+maintainers-logins = ["onox"]
+
+[available.'case(os)']
+'linux|macos' = true
+'...' = false
+
+[build-switches]
+validation.compile_checks = "warnings"
+"*".style_checks = ["-gnatygAO-Is"]
