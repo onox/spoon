@@ -17,28 +17,26 @@ with Spoon;
 procedure Example is
    use all type Spoon.Result_State;
    use type Spoon.Exit_Status;
+
+   Arg_1 : aliased Spoon.Argument := Spoon.To_Argument ("2");
+
+   Result : constant Spoon.Result :=
+     Spoon.Spawn ("/bin/sleep", (1 => Arg_1'Unchecked_Access));
 begin
-   declare
-      Arg_1 : aliased Spoon.Argument := Spoon.To_Argument ("2");
+   Ada.Text_IO.Put (Result.State'Image & " ");
 
-      Result : constant Spoon.Result :=
-        Spoon.Spawn ("/bin/sleep", (1 => Arg_1'Unchecked_Access));
-   begin
-      Ada.Text_IO.Put (Result.State'Image & " ");
-
-      case Result.State is
-         when Exited =>
-            if Result.Exit_Status = Spoon.Success then
-               Ada.Text_IO.Put_Line ("OK");
-            else
-               Ada.Text_IO.Put_Line ("with status" & Result.Exit_Status'Image);
-            end if;
-         when Crashed | Terminated =>
-            Ada.Text_IO.Put_Line ("with signal" & Result.Signal'Image);
-         when Error =>
-            Ada.Text_IO.Put_Line ("with error" & Result.Error_Code'Image);
-      end case;
-   end;
+   case Result.State is
+      when Exited =>
+         if Result.Exit_Status = Spoon.Success then
+            Ada.Text_IO.Put_Line ("OK");
+         else
+            Ada.Text_IO.Put_Line ("with status" & Result.Exit_Status'Image);
+         end if;
+      when Crashed | Terminated =>
+         Ada.Text_IO.Put_Line ("with signal" & Result.Signal'Image);
+      when Error =>
+         Ada.Text_IO.Put_Line ("with error" & Result.Error_Code'Image);
+   end case;
 
    if Spoon.Spawn ("whoami", Kind => Spoon.Name).State = Exited then
       Ada.Text_IO.Put_Line ("OK");
