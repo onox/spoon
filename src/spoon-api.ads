@@ -40,10 +40,9 @@ private package Spoon.API is
 
    use Interfaces.C;
 
-   type Error_Code      is new int;
-   type File_Descriptor is new int;
-   type Process_ID      is new int range 1 .. int'Last;
-   type Group_ID        is new int range 0 .. int'Last;
+   type Error_Code is new int;
+   type Process_ID is new int range 1 .. int'Last;
+   type Group_ID   is new int range 2 .. int'Last;
 
    type Argument_C_Array is array (Natural range <>) of aliased Argument_Access
      with Convention => C;
@@ -81,8 +80,28 @@ private package Spoon.API is
       Options     : int) return Error_Code
    with Import, Convention => C, External_Name => "waitpid";
 
-   function Waitpid_Status (Wait_Status : int; Exit_Status : out int) return Exit_Condition
-     with Import, Convention => C, External_Name => "spoon_waitpid_status";
+   function Waitpid_Status
+     (Wait_Status : int;
+      Exit_Status : out int) return Exit_Condition
+   with Import, Convention => C, External_Name => "spoon_waitpid_status";
+
+   ----------------------------------------------------------------------------
+
+   type Signal is new int range 1 .. int'Last;
+
+   Signal_Kill      : constant Signal := 9;
+   Signal_Terminate : constant Signal := 15;
+   --  Numbering is always the same on all major platforms (see man page signal(7))
+
+   function Kill_Process
+     (Process_ID : API.Process_ID;
+      Signal     : API.Signal) return Error_Code
+   with Import, Convention => C, External_Name => "kill";
+
+   function Kill_Group
+     (Group_ID : API.Group_ID;
+      Signal   : API.Signal) return Error_Code
+   with Import, Convention => C, External_Name => "killpg";
 
    ----------------------------------------------------------------------------
 
@@ -122,7 +141,7 @@ private package Spoon.API is
 
    function Attributes_Set_Process_Group
      (Object   : in out Spawn_Attributes_Type;
-      Group_ID : API.Group_ID) return Error_Code
+      Group_ID : int) return Error_Code
    with Import, Convention => C, External_Name => "posix_spawnattr_setpgroup";
 
 --   function Attributes_Set_Scheduler_Policy

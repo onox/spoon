@@ -15,11 +15,14 @@
 // limitations under the License.
 
 #include <spawn.h>
+#include <fcntl.h>
 #include <sys/wait.h>
 
 const size_t spoon_posix_spawn_file_actions_t_size = sizeof(posix_spawn_file_actions_t);
 const size_t spoon_posix_spawnattr_t_size = sizeof(posix_spawnattr_t);
 const size_t spoon_sigset_t_size = sizeof(sigset_t);
+
+const int spoon_o_cloexec = O_CLOEXEC;
 
 int spoon_waitpid_status (int wstatus, int *status) {
     if (WIFEXITED(wstatus)) {

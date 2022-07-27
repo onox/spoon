@@ -17,16 +17,19 @@
 with Interfaces.C;
 
 with Spoon.API;
+with Spoon.Pipes;
 
 package body Spoon is
 
-   function To_Argument (Value : String) return Argument is (Argument (Value & L1.NUL));
+   use type API.Error_Code;
+
+   function To_Argument (Value : String) return Argument is
+     (Argument (Value & L1.NUL));
 
    function Wait_For_Exit (PID : API.Process_ID) return Result is
       Wait_Status, Exit_Status : Interfaces.C.int;
 
       use all type API.Exit_Condition;
-      use type API.Error_Code;
    begin
       loop
          if API.Waitpid (PID, Wait_Status, 0) = -1 then
@@ -58,18 +61,20 @@ package body Spoon is
    function Spawn
      (Executable : String;
       Arguments  : Argument_Array   := (1 .. 0 => null);
-      Attributes : Spoon.Attributes := Default_Attributes;
-      Kind       : Program_Kind     := File_Path) return Result
+      Attributes : Spoon.Attributes := (IDs => Inherit, Group => Inherit);
+      Kind       : Program_Kind     := File_Path;
+      Output     : access Output_Capturer'Class := null) return Process
    is
-      PID   : API.Process_ID;
-      Error : API.Error_Code;
-
-      use type API.Error_Code;
+      PID   : API.Process_ID := 1;
+      Error : API.Error_Code := 0;
 
       Actions : API.File_Actions_Type
         (1 .. API.SE.Storage_Offset (API.File_Actions_Type_Size));
       Attribs : API.Spawn_Attributes_Type
         (1 .. API.SE.Storage_Offset (API.Spawn_Attributes_Type_Size));
+
+      Error_Actions : API.Error_Code;
+      Error_Attribs : API.Error_Code;
 
       Arg_0 : aliased Argument := To_Argument (Executable);
 
@@ -80,57 +85,126 @@ package body Spoon is
          Args (Index) := Arguments (Index);
       end loop;
 
-      Error := API.File_Actions_Init (Actions);
-      if Error /= 0 then
-         return (State => Spoon.Error, Error_Code => Integer (Error));
-      end if;
-
-      Error := API.Attributes_Init (Attribs);
-      if Error /= 0 then
-         return (State => Spoon.Error, Error_Code => Integer (Error));
-      end if;
+      Error_Actions := API.File_Actions_Init (Actions);
+      Error_Attribs := API.Attributes_Init (Attribs);
 
       if Attributes.Group /= Inherit then
          Error := API.Attributes_Set_Process_Group (Attribs,
            (case Attributes.Group is
-              when Process_ID => 0,
-              when Custom     => API.Group_ID (Attributes.Group_ID),
-              when Inherit    => 0));  --  Cannot be reached
-         if Error /= 0 then
-            return (State => Spoon.Error, Error_Code => Integer (Error));
-         end if;
+              when Same_As_PID => 0,
+              when Custom      => Interfaces.C.int (Attributes.Group_ID),
+              when Inherit     => 0));  --  Cannot be reached
       end if;
 
       Error := API.Attributes_Set_Flags (Attribs,
         (Reset_IDs     => Attributes.IDs /= Inherit,
          Process_Group => Attributes.Group /= Inherit,
          others        => False));
-      if Error /= 0 then
-         return (State => Spoon.Error, Error_Code => Integer (Error));
-      end if;
 
-      case Kind is
-         when File_Path =>
-            Error := API.Spawn (PID, Args (Args'First), Actions, Attribs, Args, API.Environment);
-         when Name =>
-            Error := API.Spawnp (PID, Args (Args'First), Actions, Attribs, Args, API.Environment);
-      end case;
+      declare
+         Stdin, Stdout, Stderr : constant Pipe := Spoon.Pipes.Create_Pipe;
+         --  TODO Do not create pipes at all if Output = null
+      begin
+         if Output /= null then
+            Error := API.File_Actions_Add_Dup2 (Actions, Stdin.Read, 0);
+            Error := API.File_Actions_Add_Dup2 (Actions, Stdout.Write, 1);
+            Error := API.File_Actions_Add_Dup2 (Actions, Stderr.Write, 2);
+            --  Pipes are automatically closed in child because they are
+            --  created with O_CLOEXEC flag by function Create_Pipe
+         end if;
 
-      if Error /= 0 then
-         return (State => Spoon.Error, Error_Code => Integer (Error));
-      end if;
+         case Kind is
+            when File_Path =>
+               Error := API.Spawn
+                 (PID, Args (Args'First), Actions, Attribs, Args, API.Environment);
+            when Name =>
+               Error := API.Spawnp
+                 (PID, Args (Args'First), Actions, Attribs, Args, API.Environment);
+         end case;
 
-      Error := API.File_Actions_Destroy (Actions);
-      if Error /= 0 then
-         return (State => Spoon.Error, Error_Code => Integer (Error));
-      end if;
+         Spoon.Pipes.Close (Stdin.Read);
+         Spoon.Pipes.Close (Stdout.Write);
+         Spoon.Pipes.Close (Stderr.Write);
 
-      Error := API.Attributes_Destroy (Attribs);
-      if Error /= 0 then
-         return (State => Spoon.Error, Error_Code => Integer (Error));
-      end if;
+         if Error_Actions = 0 then
+            Error_Actions := API.File_Actions_Destroy (Actions);
+         end if;
 
-      return Wait_For_Exit (PID);
+         if Error_Attribs = 0 then
+            Error_Attribs := API.Attributes_Destroy (Attribs);
+         end if;
+
+         return Result : Process (Capture_Output => Output /= null, Output => Output) do
+            Result.Process_ID := Process_ID (PID);
+            Result.Error_Code := Integer (Error);
+            Result.Group_Kind := Attributes.Group;
+            Result.Stdin      := Stdin;
+            Result.Stdout     := Stdout;
+            Result.Stderr     := Stderr;
+         end return;
+      end;
    end Spawn;
+
+   function Spawn
+     (Executable : String;
+      Arguments  : Argument_Array   := (1 .. 0 => null);
+      Attributes : Spoon.Attributes := (IDs => Inherit, Group => Inherit);
+      Kind       : Program_Kind     := File_Path;
+      Output     : access Output_Capturer'Class := null) return Result
+   is
+      Process : constant Spoon.Process :=
+        Spawn (Executable, Arguments, Attributes, Kind, Output);
+   begin
+      return Process.Wait_For_Exit;
+   end Spawn;
+
+   ----------------------------------------------------------------------------
+
+   function Wait_For_Exit (Object : Process) return Result is
+   begin
+      return Result : constant Spoon.Result :=
+        (if Object.Error_Code = 0 then
+           Wait_For_Exit (API.Process_ID (Object.Process_ID))
+         else
+           (State => Spoon.Error, Error_Code => Object.Error_Code))
+      do
+         Spoon.Pipes.Close (Object.Stdin.Write);
+         Spoon.Pipes.Close (Object.Stdout.Read);
+         Spoon.Pipes.Close (Object.Stderr.Read);
+
+         --  TODO Wait for tasks to terminate if Object.Capture_Output is True
+      end return;
+   end Wait_For_Exit;
+
+   procedure Terminate_Process (Object : Process) is
+      Error : constant API.Error_Code :=
+        API.Kill_Process (API.Process_ID (Object.Process_ID), API.Signal_Terminate);
+   begin
+      pragma Assert (Error = 0);
+   end Terminate_Process;
+
+   procedure Terminate_Group (Object : Process) is
+      Error : constant API.Error_Code :=
+        API.Kill_Group (API.Group_ID (Object.Process_ID), API.Signal_Terminate);
+   begin
+      pragma Assert (Error = 0);
+   end Terminate_Group;
+
+   ----------------------------------------------------------------------------
+
+   task body Pipe_Processor is
+   begin
+      loop
+         declare
+            Value : constant Ada.Streams.Stream_Element_Array := Spoon.Pipes.Read
+              (case Kind is
+                 when Standard_Output => Process.Stdout,
+                 when Standard_Error  => Process.Stderr);
+         begin
+            exit when Value'Length = 0;
+            Process.Output.Write (Value, Kind);
+         end;
+      end loop;
+   end Pipe_Processor;
 
 end Spoon;
