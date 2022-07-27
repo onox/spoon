@@ -7,6 +7,7 @@
 # Spoon
 
 An Ada 2012 library for `posix_spawn()` to spawn processes without a `fork()`.
+See the paper [A fork() in the road][url-ms-fork-paper] why `fork()` should not be used.
 
 ## Usage
 
@@ -97,3 +98,4 @@ refers to this license:
 
   [url-alire]: https://alire.ada.dev/
   [url-apache]: https://opensource.org/licenses/Apache-2.0
+  [url-ms-fork-paper]: https://www.microsoft.com/en-us/research/publication/a-fork-in-the-road/
