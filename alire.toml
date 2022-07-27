@@ -1,5 +1,5 @@
 name = "spoon"
-description = "Spawn processes without a fork()!"
+description = "Use posix_spawn() to spawn processes without forking"
 version = "1.0.0"
 website = "https://github.com/onox/spoon"
 licenses = "Apache-2.0"
