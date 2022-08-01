@@ -1,6 +1,6 @@
 name = "spoon"
 description = "Use posix_spawn() to spawn processes without forking"
-version = "1.0.0"
+version = "1.0.1"
 website = "https://github.com/onox/spoon"
 licenses = "Apache-2.0"
 tags = ["posix", "spawn", "process"]
